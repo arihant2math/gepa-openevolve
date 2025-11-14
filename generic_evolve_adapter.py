@@ -70,14 +70,7 @@ class EvolveAdapter(GEPAAdapter):
         self.cascade = self.config["evaluator"].get("cascade_evaluation", False)
         self.evaluator_path = path / "evaluator.py"
         self.temp_env_path = Path(tempfile.mkdtemp())
-        # Initialized with uv
-        p = subprocess.Popen(["uv", "init", "."], cwd=self.temp_env_path)
-        p.wait()
-        # Create a new temporary python environment using uv, initialize it with os.path.join(path_to_open_evolve_example, "requirements.txt")
-        if not (self.path / "requirements.txt").exists():
-            raise FileNotFoundError(f"Requirements file not found at {path / 'requirements.txt'}")
-        p = subprocess.Popen(["uv", "pip", "install", "-r", str(self.path / "requirements.txt")], cwd=self.temp_env_path)
-        p.wait()
+        
         self.evaluation_strategy = CascadeEvaluationStrategy(self.evaluator_path, self.config["evaluator"]["cascade_thresholds"]) if self.cascade else DefaultEvaluationStrategy(self.evaluator_path)
 
     def evaluate(self, candidate: dict, inputs: list) -> list:
