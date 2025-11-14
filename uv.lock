@@ -1,0 +1,23 @@
+version = 1
+revision = 3
+requires-python = ">=3.14"
+
+[[package]]
+name = "gepa"
+version = "0.0.22"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/be/9a4c31c65c4910e73bd4a316df99347681bce4f2ef6d10877cc1ed8d57da/gepa-0.0.22.tar.gz", hash = "sha256:0b13a644efd2af52186e456eaad2ae28fcf88c6f796a9c999910c587863d4315", size = 116337, upload-time = "2025-11-10T21:39:27.044Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b3/0e/d41272b28f2163f5bf840b508cbaf4a0bc01eaeaa6e5d447558d1050eb3b/gepa-0.0.22-py3-none-any.whl", hash = "sha256:ff57ee0442399a5cc62d01411935476bc80cfa8f1c318bed82e3db4c2c834665", size = 119666, upload-time = "2025-11-10T21:39:26.028Z" },
+]
+
+[[package]]
+name = "gepa-openevolve"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "gepa" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "gepa", specifier = ">=0.0.22" }]
