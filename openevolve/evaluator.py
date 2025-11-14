@@ -27,7 +27,7 @@ SIM_STRATEGY_DIR = os.path.join(PROJECT_ROOT, "openevolve_single_region_strategy
 if SIM_STRATEGY_DIR not in sys.path:
     sys.path.insert(0, SIM_STRATEGY_DIR)
 
-from gepa.adapters.generic_openevolve_adapter.openevolve.sim_worker import run_single_simulation  # noqa: E402
+from .sim_worker import run_single_simulation  # noqa: E402
 
 # -----------------------------------------------------------------------------
 # Logging / WANDB

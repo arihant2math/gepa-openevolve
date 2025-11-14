@@ -9,6 +9,7 @@ from types import ModuleType
 from typing import Any, Callable, Optional
 from pathlib import Path
 import importlib
+import subprocess
 
 from gepa import EvaluationBatch, GEPAAdapter
 import yaml
@@ -20,17 +21,13 @@ class EvaluationStrategy:
 class DefaultEvaluationStrategy(EvaluationStrategy):
     def __init__(self, path: Path):
         self.path = path
-        self.module = self.load_function()
-
-    def load_function(self) -> Callable:
-        # import
-        spec = importlib.util.spec_from_file_location(self.path)
+        spec = importlib.util.spec_from_file_location("evaluator", self.path)
         module = importlib.util.module_from_spec(spec)
         sys.modules[self.path.stem] = module
         spec.loader.exec_module(module)
         if not hasattr(module, "evaluate"):
             raise AttributeError(f"evaluate function not found in {self.path}")
-        return getattr(module, "evaluate")
+        self.module = getattr(module, "evaluate")
 
     def evaluate(self, program_path: str) -> list:
         return self.module.evaluate(program_path)
@@ -46,7 +43,7 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
         possible_stages = ["evaluate_stage2", "evaluate_stage3"]
         stages = {}
         # import
-        spec = importlib.util.spec_from_file_location(self.path)
+        spec = importlib.util.spec_from_file_location("evaluator", self.path)
         module = importlib.util.module_from_spec(spec)
         sys.modules[self.path.stem] = module
         spec.loader.exec_module(module)
@@ -66,20 +63,22 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
         # TODO: implement cascading logic based on thresholds
 
 class EvolveAdapter(GEPAAdapter):
-    def __init__(self, path: Path, cascade=False, *args, **kwargs):
+    def __init__(self, path: Path, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.cascade = cascade
         self.path = path
         self.config = yaml.safe_load(open(path / "config.yaml", "r"))
+        self.cascade = self.config["evaluator"].get("cascade_evaluation", False)
         self.evaluator_path = path / "evaluator.py"
-        self.evaluation_strategy = CascadeEvaluationStrategy(self.evaluator_path) if cascade else DefaultEvaluationStrategy(self.evaluator_path)
         self.temp_env_path = Path(tempfile.mkdtemp())
         # Initialized with uv
-        os.system(f"uv init .", cwd=self.temp_env_path)
+        p = subprocess.Popen(["uv", "init", "."], cwd=self.temp_env_path)
+        p.wait()
         # Create a new temporary python environment using uv, initialize it with os.path.join(path_to_open_evolve_example, "requirements.txt")
         if not (self.path / "requirements.txt").exists():
             raise FileNotFoundError(f"Requirements file not found at {path / 'requirements.txt'}")
-        os.system(f"uv pip install -r {self.path / 'requirements.txt'}", cwd=self.temp_env_path)
+        p = subprocess.Popen(["uv", "pip", "install", "-r", str(self.path / "requirements.txt")], cwd=self.temp_env_path)
+        p.wait()
+        self.evaluation_strategy = CascadeEvaluationStrategy(self.evaluator_path, self.config["evaluator"]["cascade_thresholds"]) if self.cascade else DefaultEvaluationStrategy(self.evaluator_path)
 
     def evaluate(self, candidate: dict, inputs: list) -> list:
         # candidate = {'code': '# Evolve-Block -Start ... # Evolve-Block end'}
