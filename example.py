@@ -8,10 +8,22 @@ from typing import List
 import tempfile
 
 from gepa import optimize
+from gepa import EvaluationBatch
 from generic_evolve_adapter import EvolveAdapter
 
+
 INITIAL_PROGRAM = open(Path(__file__).resolve().parent / "cant_be_late" / "initial_greedy.py", "r").read()
-adapter = EvolveAdapter(path=Path(__file__).resolve().parent / "cant_be_late")
+
+def output_extractor(eval_out):
+    trace_cost_json = eval_out.artifacts["trace_costs_json"]
+    trace_cost = json.loads(trace_cost_json)
+    scores = []
+    for key, results in trace_cost.items():
+        for result in results:
+            scores.append(result["cost"])
+    return EvaluationBatch(scores=scores, outputs=eval_out.artifacts)
+
+adapter = EvolveAdapter(path=Path(__file__).resolve().parent / "cant_be_late", output_extractor=output_extractor)
 
 DUMMY_BATCH: List[None] = [None]
 RUN_DIR = Path(tempfile.mkdtemp())

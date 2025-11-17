@@ -226,17 +226,18 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
         return merged_result
 
 class EvolveAdapter(GEPAAdapter):
-    def __init__(self, path: Path, *args, **kwargs):
+    def __init__(self, path: Path, output_extractor: Callable[EvaluationResult, EvaluationBatch], *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.path = path
         self.config = yaml.safe_load(open(path / "config.yaml", "r"))
         self.cascade = self.config["evaluator"].get("cascade_evaluation", False)
         self.evaluator_path = path / "evaluator.py"
         self.temp_env_path = Path(tempfile.mkdtemp())
+        self.output_extractor = output_extractor
         
         self.evaluation_strategy = CascadeEvaluationStrategy(self.evaluator_path, self.config["evaluator"]["cascade_thresholds"]) if self.cascade else DefaultEvaluationStrategy(self.evaluator_path)
 
-    def evaluate(self, batch: list, candidate: dict[str, str], capture_traces: bool = False,) -> list:
+    def evaluate(self, batch: list, candidate: dict[str, str], capture_traces: bool = False,) -> EvaluationBatch:
         # candidate = {'code': '# Evolve-Block -Start ... # Evolve-Block end'}
         # write the code to a temporary file
         tmp_code_path = self.temp_env_path / "temp_code.py"
@@ -250,10 +251,8 @@ class EvolveAdapter(GEPAAdapter):
         # run the code
         # run the evaluate method with the temporary file
         eval_out = self.evaluation_strategy.evaluate(str(tmp_code_path))
-        # Post process this eval_out to return a list of scores and feedback
-        print(eval_out)
-        scores = [eval_out['score'] for eval_out in eval_out]
-        return scores
+        output = self.output_extractor(eval_out)
+        return output
 
     def make_reflective_dataset(self, candidate: dict, inputs: list, trajectories: list) -> list:
         if not self.config['evaluator']['enable_artifacts']:
