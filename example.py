@@ -10,8 +10,8 @@ import tempfile
 from gepa import optimize
 from generic_evolve_adapter import EvolveAdapter
 
-INITIAL_PROGRAM = Path(__file__).resolve().parent / "openevolve" / "initial_greedy.py"
-adapter = EvolveAdapter(path=Path(__file__).resolve().parent / "openevolve")
+INITIAL_PROGRAM = open(Path(__file__).resolve().parent / "cant_be_late" / "initial_greedy.py", "r").read()
+adapter = EvolveAdapter(path=Path(__file__).resolve().parent / "cant_be_late")
 
 DUMMY_BATCH: List[None] = [None]
 RUN_DIR = Path(tempfile.mkdtemp())
