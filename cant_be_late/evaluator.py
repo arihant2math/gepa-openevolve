@@ -15,7 +15,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 
-from openevolve.evaluation_result import EvaluationResult
+from openevolve.evaluator import EvaluationResult
 
 # -----------------------------------------------------------------------------
 # Paths / imports
