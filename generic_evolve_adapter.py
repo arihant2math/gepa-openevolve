@@ -96,7 +96,21 @@ class DefaultEvaluationStrategy(EvaluationStrategy):
         self.module = getattr(module, "evaluate")
 
     def evaluate(self, program_path: str) -> list:
-        return self.module.evaluate(program_path)
+        try:
+            result = self.module(program_path)
+            eval_result = _process_evaluation_result(result)
+        except Exception as e:
+            logging.error(f"Error evaluating {program_path}: {e}")
+            error_context = {}
+            return EvaluationResult(
+                metrics={"passed": 0.0, "error": 0.0},
+                artifacts={
+                    "stderr": str(e),
+                    "traceback": traceback.format_exc(),
+                    **error_context,
+                },
+            )
+        return eval_result
 
 class CascadeEvaluationStrategy(EvaluationStrategy):
     def __init__(self, path: Path, cascade_thresholds: list[float]):
