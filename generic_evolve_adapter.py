@@ -248,8 +248,41 @@ class EvolveAdapter(GEPAAdapter):
         self.evaluator_path = path / "evaluator.py"
         self.temp_env_path = Path(tempfile.mkdtemp())
         self.output_extractor = output_extractor
-        
         self.evaluation_strategy = CascadeEvaluationStrategy(self.evaluator_path, self.config["evaluator"]["cascade_thresholds"]) if self.cascade else DefaultEvaluationStrategy(self.evaluator_path)
+
+        # If caller did not explicitly set the number of workers, inherit it from the
+        # configuration (falls back to the evaluator.parallel_evaluations field).
+        max_litellm_workers = self.config["evaluator"]["parallel_evaluations"]
+
+        # Pick the model with the highest weight (first if already sorted)
+        if self.config["llm"]["models"]:
+            primary = sorted(self.config["llm"]["models"], key=lambda m: m["weight"], reverse=True)[0]
+            model_name = primary["name"]
+            api_key = primary["api_key"] or self.config["llm"]["api_key"]
+            api_base = primary["api_base"] or self.config["llm"]["api_base"]
+        else:
+            # Sensible fall-back
+            model_name = getattr(self.config["llm"], "primary_model", None) or "gpt-3.5-turbo"
+            api_key = self.config["llm"]["api_key"]
+            api_base = self.config["llm"]["api_base"]
+
+        import litellm  # type: ignore
+
+        self.litellm = litellm
+
+        def _call_lm(prompt: str) -> str:
+            completion = self.litellm.completion(
+                model=model_name,
+                messages=[{"role": "user", "content": prompt}],
+                api_key=api_key,
+                base_url=api_base,
+                temperature=primary.temperature,
+                top_p=primary.top_p,
+                max_tokens=primary.max_tokens,
+            )
+            return completion.choices[0].message.content or ""
+
+        self.reflection_lm = _call_lm
 
     def evaluate(self, batch: list, candidate: dict[str, str], capture_traces: bool = False,) -> EvaluationBatch:
         # candidate = {'code': '# Evolve-Block -Start ... # Evolve-Block end'}
@@ -270,12 +303,34 @@ class EvolveAdapter(GEPAAdapter):
 
     def make_reflective_dataset(self, candidate: dict, inputs: list, trajectories: list) -> list:
         if not self.config['evaluator']['enable_artifacts']:
+            # Nothing to do
             return super().make_reflective_dataset(candidate, inputs, trajectories)
         else: 
+            print(candidate, inputs, trajectories)
             # TODO: replicate openevolve behavior
             return super().make_reflective_dataset(candidate, inputs, trajectories)
 
-    def propose_new_texts(self, candidate: dict, inputs: list, trajectories: list) -> dict:
-        return super().propose_new_texts(candidate, inputs, trajectories)
-        # Use the llm config from config.yaml to propose new texts
-        # Use the prompt.system_prompt from config.yaml to propose new texts
+    def propose_new_texts(
+        self,
+        candidate: dict[str, str],
+        reflective_dataset: dict[str, list[dict[str, Any]]],
+        components_to_update: list[str],
+    ) -> dict[str, str]:
+        from open_evolve_proposal_signature import (
+            OpenEvolveProposalSignature,
+        )
+
+        new_texts: dict[str, str] = {}
+        for name in components_to_update:
+            base_instruction = candidate[name]
+            dataset_with_feedback = reflective_dataset.get(name, [])
+
+            new_texts[name] = OpenEvolveProposalSignature.run(
+                lm=self.reflection_lm,
+                input_dict={
+                    "current_instruction_doc": base_instruction,
+                    "dataset_with_feedback": dataset_with_feedback,
+                },
+            )["new_program"]
+
+        return new_texts
