@@ -18,8 +18,6 @@ def output_extractor(eval_out):
     return EvaluationBatch(scores=eval_out.metrics["artifacts"]["scores"], outputs=eval_out.metrics["artifacts"], trajectories=eval_out.metrics["artifacts"])
 
 def reflect(batch: EvaluationBatch) -> list:
-    # TODO: Fix valset stuff first
-    return []
     output = []
     for score, balancedness, time in zip(batch.outputs["scores"], batch.outputs["balancedness_scores"], batch.outputs["times"]):
         output.append({
