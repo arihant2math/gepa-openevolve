@@ -102,7 +102,7 @@ class DefaultEvaluationStrategy(EvaluationStrategy):
             raise AttributeError(f"evaluate function not found in {self.path}")
         self.module = getattr(module, "evaluate")
 
-    def evaluate(self, program_path: str) -> list:
+    def evaluate(self, program_path: str) -> EvaluationResult:
         try:
             result = self.module(program_path)
             eval_result = _process_evaluation_result(result)
