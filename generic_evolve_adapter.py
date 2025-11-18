@@ -1,22 +1,26 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import importlib.util
+import logging
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
-from types import ModuleType
-from typing import Any, Callable, Optional
-from pathlib import Path
-import importlib
-import logging
-import subprocess
 import traceback
+from pathlib import Path
+from types import ModuleType
+from typing import Any, Callable, Mapping, Optional, Sequence
 
-from openevolve.evaluation_result import EvaluationResult
-from gepa import EvaluationBatch, GEPAAdapter
 import yaml
+from gepa import EvaluationBatch, GEPAAdapter
+from openevolve.evaluation_result import EvaluationResult
+from openevolve_proposal_signature import (
+    OpenEvolveProposalSignature,
+)
+
 
 def _process_evaluation_result(result: Any) -> EvaluationResult:
     """
@@ -39,10 +43,11 @@ def _process_evaluation_result(result: Any) -> EvaluationResult:
         logging.warning(f"Unexpected evaluation result type: {type(result)}")
         return EvaluationResult(metrics={"error": 0.0})
 
+
 def _passes_threshold(metrics: Dict[str, float], threshold: float) -> bool:
     """
     Check if metrics pass a threshold
-    
+
     Uses 'combined_score' if available (for consistency with evolution),
     otherwise falls back to averaging all numeric metrics except 'error'
 
@@ -80,9 +85,11 @@ def _passes_threshold(metrics: Dict[str, float], threshold: float) -> bool:
     avg_score = sum(valid_metrics) / len(valid_metrics)
     return avg_score >= threshold
 
+
 class EvaluationStrategy:
     def evaluate(self, program_path: str) -> list:
         raise NotImplementedError
+
 
 class DefaultEvaluationStrategy(EvaluationStrategy):
     def __init__(self, path: Path):
@@ -111,6 +118,7 @@ class DefaultEvaluationStrategy(EvaluationStrategy):
                 },
             )
         return eval_result
+
 
 class CascadeEvaluationStrategy(EvaluationStrategy):
     def __init__(self, path: Path, cascade_thresholds: list[float]):
@@ -159,7 +167,9 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
             )
 
         # Check threshold
-        if not _passes_threshold(stage1_eval_result.metrics, self.cascade_thresholds[0]):
+        if not _passes_threshold(
+            stage1_eval_result.metrics, self.cascade_thresholds[0]
+        ):
             logging.warning(f"Stage 1 evaluation failed to meet threshold")
             # TODO: Should we return?
 
@@ -194,7 +204,9 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
         merged_artifacts.update(stage1_eval_result.artifacts)
         merged_artifacts.update(stage2_eval_result.artifacts)
 
-        merged_result = EvaluationResult(metrics=merged_metrics, artifacts=merged_artifacts)
+        merged_result = EvaluationResult(
+            metrics=merged_metrics, artifacts=merged_artifacts
+        )
 
         # Check threshold for stage 3
         if len(self.cascade_thresholds) < 2 or not _passes_threshold(
@@ -205,7 +217,7 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
         # Stage 3
         if not "evaluate_stage3" in self.stages:
             return merged_result
-            
+
         try:
             stage3 = self.stages["evaluate_stage3"]
             stage3_result = stage3(program_path)
@@ -239,8 +251,16 @@ class CascadeEvaluationStrategy(EvaluationStrategy):
 
         return merged_result
 
+
 class EvolveAdapter(GEPAAdapter):
-    def __init__(self, path: Path, output_extractor: Callable[EvaluationResult, EvaluationBatch], *args, **kwargs):
+    def __init__(
+        self,
+        path: Path,
+        output_extractor: Callable[EvaluationResult, EvaluationBatch],
+        reflect: Callable[EvaluationBatch, dict],
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.path = path
         self.config = yaml.safe_load(open(path / "config.yaml", "r"))
@@ -248,21 +268,32 @@ class EvolveAdapter(GEPAAdapter):
         self.evaluator_path = path / "evaluator.py"
         self.temp_env_path = Path(tempfile.mkdtemp())
         self.output_extractor = output_extractor
-        self.evaluation_strategy = CascadeEvaluationStrategy(self.evaluator_path, self.config["evaluator"]["cascade_thresholds"]) if self.cascade else DefaultEvaluationStrategy(self.evaluator_path)
+        self.reflect = reflect
+        self.evaluation_strategy = (
+            CascadeEvaluationStrategy(
+                self.evaluator_path, self.config["evaluator"]["cascade_thresholds"]
+            )
+            if self.cascade
+            else DefaultEvaluationStrategy(self.evaluator_path)
+        )
 
         # If caller did not explicitly set the number of workers, inherit it from the
         # configuration (falls back to the evaluator.parallel_evaluations field).
         max_litellm_workers = self.config["evaluator"]["parallel_evaluations"]
 
         # Pick the model with the highest weight (first if already sorted)
-        if self.config["llm"]["models"]:
-            primary = sorted(self.config["llm"]["models"], key=lambda m: m["weight"], reverse=True)[0]
+        if "models" in self.config["llm"]:
+            primary = sorted(
+                self.config["llm"]["models"], key=lambda m: m["weight"], reverse=True
+            )[0]
             model_name = primary["name"]
             api_key = primary["api_key"] or self.config["llm"]["api_key"]
             api_base = primary["api_base"] or self.config["llm"]["api_base"]
         else:
             # Sensible fall-back
-            model_name = getattr(self.config["llm"], "primary_model", None) or "gpt-3.5-turbo"
+            model_name = (
+                getattr(self.config["llm"], "primary_model", None) or "gpt-3.5-turbo"
+            )
             api_key = self.config["llm"]["api_key"]
             api_base = self.config["llm"]["api_base"]
 
@@ -284,7 +315,12 @@ class EvolveAdapter(GEPAAdapter):
 
         self.reflection_lm = _call_lm
 
-    def evaluate(self, batch: list, candidate: dict[str, str], capture_traces: bool = False,) -> EvaluationBatch:
+    def evaluate(
+        self,
+        batch: list,
+        candidate: dict[str, str],
+        capture_traces: bool = False,
+    ) -> EvaluationBatch:
         # candidate = {'code': '# Evolve-Block -Start ... # Evolve-Block end'}
         # write the code to a temporary file
         tmp_code_path = self.temp_env_path / "temp_code.py"
@@ -294,21 +330,24 @@ class EvolveAdapter(GEPAAdapter):
         elif tmp_code_path.exists():
             tmp_code_path.rmdir()
         with open(tmp_code_path, "w") as f:
-            f.write(candidate['program'])
+            f.write(candidate["program"])
         # run the code
         # run the evaluate method with the temporary file
         eval_out = self.evaluation_strategy.evaluate(str(tmp_code_path))
         output = self.output_extractor(eval_out)
-        return output
+        return {"program": output}
 
-    def make_reflective_dataset(self, candidate: dict, inputs: list, trajectories: list) -> list:
-        if not self.config['evaluator']['enable_artifacts']:
-            # Nothing to do
-            return super().make_reflective_dataset(candidate, inputs, trajectories)
-        else: 
-            print(candidate, inputs, trajectories)
-            # TODO: replicate openevolve behavior
-            return super().make_reflective_dataset(candidate, inputs, trajectories)
+    def make_reflective_dataset(
+        self,
+        candidate: dict[str, str],
+        eval_batch: EvaluationBatch,
+        components_to_update: list[str],
+    ) -> Mapping[str, Sequence[Mapping[str, Any]]]:
+        if "program" not in components_to_update:
+            return {}
+
+        dataset = self.reflect(eval_batch)
+        return dataset
 
     def propose_new_texts(
         self,
@@ -316,10 +355,6 @@ class EvolveAdapter(GEPAAdapter):
         reflective_dataset: dict[str, list[dict[str, Any]]],
         components_to_update: list[str],
     ) -> dict[str, str]:
-        from open_evolve_proposal_signature import (
-            OpenEvolveProposalSignature,
-        )
-
         new_texts: dict[str, str] = {}
         for name in components_to_update:
             base_instruction = candidate[name]

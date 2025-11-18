@@ -15,9 +15,21 @@ from generic_evolve_adapter import EvolveAdapter
 INITIAL_PROGRAM = open(Path(__file__).resolve().parent / "eplb" / "initial_program.py", "r").read()
 
 def output_extractor(eval_out):
-    return EvaluationBatch(scores=eval_out.metrics["artifacts"]["scores"], outputs=eval_out.metrics["artifacts"])
+    return EvaluationBatch(scores=eval_out.metrics["artifacts"]["scores"], outputs=eval_out.metrics["artifacts"], trajectories=eval_out.metrics["artifacts"])
 
-adapter = EvolveAdapter(path=Path(__file__).resolve().parent / "eplb", output_extractor=output_extractor)
+def reflect(batch: EvaluationBatch) -> list:
+    # TODO: Fix valset stuff first
+    return []
+    output = []
+    for score, balancedness, time in zip(batch.outputs["scores"], batch.outputs["balancedness_scores"], batch.outputs["times"]):
+        output.append({
+            "Score": score,
+            "Balancedness": balancedness,
+            "Time": time
+        })
+    return output
+
+adapter = EvolveAdapter(path=Path(__file__).resolve().parent / "eplb", output_extractor=output_extractor, reflect=reflect)
 
 DUMMY_BATCH: List[None] = [None]
 RUN_DIR = Path(tempfile.mkdtemp())

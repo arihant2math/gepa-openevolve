@@ -21,9 +21,13 @@ def output_extractor(eval_out):
     for key, results in trace_cost.items():
         for result in results:
             scores.append(result["cost"])
-    return EvaluationBatch(scores=scores, outputs=eval_out.artifacts)
+    return EvaluationBatch(scores=scores, outputs=trace_cost, trajectories=eval_out.artifacts)
 
-adapter = EvolveAdapter(path=Path(__file__).resolve().parent / "cant_be_late", output_extractor=output_extractor)
+def reflect(batch: EvaluationBatch) -> list:
+    # TODO: Fix valset stuff first
+    return []
+
+adapter = EvolveAdapter(path=Path(__file__).resolve().parent / "cant_be_late", output_extractor=output_extractor, reflect=reflect)
 
 DUMMY_BATCH: List[None] = [None]
 RUN_DIR = Path(tempfile.mkdtemp())
