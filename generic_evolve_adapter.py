@@ -335,7 +335,7 @@ class EvolveAdapter(GEPAAdapter):
         # run the evaluate method with the temporary file
         eval_out = self.evaluation_strategy.evaluate(str(tmp_code_path))
         output = self.output_extractor(eval_out)
-        return {"program": output}
+        return output
 
     def make_reflective_dataset(
         self,
