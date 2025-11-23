@@ -12,7 +12,7 @@ from gepa import optimize
 from gepa import EvaluationBatch
 from generic_evolve_adapter import EvolveAdapter
 
-from helpers import DEFAULT_TRACE_RATIO
+from helpers import DEFAULT_TRACE_RATIO, _write_checkpoints, _resolve_run_dir_factory, get_config
 
 
 TRACE_SAMPLE_IDS: list[int] = [
@@ -184,105 +184,22 @@ def load_dataset(
     test_set = splits["test"] if include_test else []
     return train_set, val_set, test_set
 
-def _resolve_run_dir() -> Path:
-    import os
-
-    run_dir_env = os.environ.get("GEPA_RUN_DIR")
-    if run_dir_env:
-        run_dir = Path(run_dir_env)
-    else:
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        run_dir = Path("runs") / "cant_be_late" / timestamp
-
-    run_dir.mkdir(parents=True, exist_ok=True)
-    return run_dir
-
-
-def _write_checkpoints(
-    run_dir: Path,
-    gepa_result,
-    base_score: Optional[float],
-    optimized_score: Optional[float],
-    best_candidate: dict[str, str],
-):
-    max_traces_env = os.environ.get("GEPA_MAX_TRACES")
-    max_traces = int(max_traces_env) if max_traces_env else None
-    max_metric_calls_env = os.environ.get("GEPA_MAX_METRIC_CALLS")
-    max_metric_calls = int(max_metric_calls_env) if max_metric_calls_env else 20
-    trace_ratio_env = os.environ.get("GEPA_MAX_TRACES")
-    trace_ratio = DEFAULT_TRACE_RATIO
-    if trace_ratio_env:
-        try:
-            trace_ratio = float(trace_ratio_env)
-        except ValueError:
-            print(
-                f"Invalid GEPA_MAX_TRACES='{trace_ratio_env}', falling back to {DEFAULT_TRACE_RATIO:.2f}",
-                flush=True,
-            )
-    trace_ratio = min(1.0, max(trace_ratio, DEFAULT_TRACE_RATIO))
-    skip_test = os.environ.get("GEPA_SKIP_TEST", "0") == "1"
-
-    run_dir = _resolve_run_dir()
-    print(f"GEPA artifacts will be saved to: {run_dir}")
-    print(f"Using {trace_ratio:.0%} of traces for train/val evaluation", flush=True)
-    # Serialize the full GEPA result for later inspection
-    result_path = run_dir / "gepa_result.json"
-    with result_path.open("w", encoding="utf-8") as f:
-        json.dump(gepa_result.to_dict(), f, indent=2)
-
-    # Write the best program as a Python file
-    best_program_path = run_dir / "best_program.py"
-    best_program_path.write_text(best_candidate["program"], encoding="utf-8")
-
-    # Record test metrics for quick reference
-    metrics_path = run_dir / "test_metrics.json"
-    with metrics_path.open("w", encoding="utf-8") as f:
-        json.dump(
-            {
-                "base_test_score": base_score,
-                "optimized_test_score": optimized_score,
-                "best_candidate_index": gepa_result.best_idx,
-            },
-            f,
-            indent=2,
-        )
-
-    # Snapshot every candidate for manual analysis
-    candidates_dir = run_dir / "candidates"
-    candidates_dir.mkdir(exist_ok=True)
-    for idx, candidate in enumerate(gepa_result.candidates):
-        program_path = candidates_dir / f"candidate_{idx:03d}.py"
-        program_path.write_text(candidate["program"], encoding="utf-8")
+_resolve_run_dir = _resolve_run_dir_factory("cant_be_late")
 
 if __name__ == "__main__":
     import os
 
-    max_traces_env = os.environ.get("GEPA_MAX_TRACES")
-    max_traces = int(max_traces_env) if max_traces_env else None
-    max_metric_calls_env = os.environ.get("GEPA_MAX_METRIC_CALLS")
-    max_metric_calls = int(max_metric_calls_env) if max_metric_calls_env else 20
-    trace_ratio_env = os.environ.get("GEPA_TRACE_RATIO")
-    trace_ratio = DEFAULT_TRACE_RATIO
-    if trace_ratio_env:
-        try:
-            trace_ratio = float(trace_ratio_env)
-        except ValueError:
-            print(
-                f"Invalid GEPA_TRACE_RATIO='{trace_ratio_env}', falling back to {DEFAULT_TRACE_RATIO:.2f}",
-                flush=True,
-            )
-    trace_ratio = min(1.0, max(trace_ratio, DEFAULT_TRACE_RATIO))
-    skip_test = os.environ.get("GEPA_SKIP_TEST", "0") == "1"
+    config = get_config()
 
     run_dir = _resolve_run_dir()
     # Load from train and test set
     train_set, val_set, test_set = load_dataset(
-        max_traces_per_split=max_traces,
-        trace_ratio=trace_ratio,
-        include_test=not skip_test,
+        max_traces_per_split=config.max_traces,
+        trace_ratio=config.trace_ratio,
+        include_test=not config.skip_test,
     )
     
-    if skip_test:
+    if config.skip_test:
         base_score: Optional[float] = None
         print("Base program score: skipped (GEPA_SKIP_TEST=1)")
     else:
@@ -302,7 +219,7 @@ if __name__ == "__main__":
     best_candidate = gepa_result.best_candidate
     print(f"Best program from optimization: {best_candidate['program']}")
 
-    if skip_test:
+    if config.skip_test:
         optimized_score: Optional[float] = None
         print("Optimized program score: skipped (GEPA_SKIP_TEST=1)")
     else:

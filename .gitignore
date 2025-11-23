@@ -1,4 +1,7 @@
 runs/*
-cant_be_late_data/*
-**/__pycache__
+**/__pycache__/*
 **/.DS_Store
+
+# Data directories
+cant_be_late_data/*
+expert-load.json
