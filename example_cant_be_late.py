@@ -158,9 +158,95 @@ def output_extractor(eval_out):
             scores.append(result["cost"])
     return EvaluationBatch(scores=scores, outputs=trace_cost, trajectories=eval_out.artifacts)
 
-def reflect(batch: EvaluationBatch) -> list:
-    # TODO: Fix valset stuff first
-    return []
+def reflect(eval_batch: EvaluationBatch) -> list:
+    dataset: list[dict[str, Any]] = []
+
+    trajectories = eval_batch.trajectories
+    if isinstance(trajectories, list):
+        iterable = trajectories
+    else:
+        iterable = [trajectories]
+
+    for score, trajectory in zip(eval_batch.scores, iterable, strict=False):
+        if isinstance(trajectory, dict):
+            success = trajectory.get("runs_successfully", 0.0) >= 1.0
+            
+            # Build feedback for per-sample configs
+            if success:
+                avg_cost = trajectory.get("avg_cost", abs(score))
+                
+                feedback_parts = [
+                    f"✓ Evaluation successful",
+                    f"Average cost across {len(trajectory.get('individual_results', []))} samples: ${avg_cost:.2f}",
+                ]
+                
+                # Add individual trace results with their configs
+                individual_results = trajectory.get("individual_results", [])
+                if individual_results:
+                    feedback_parts.append("\nIndividual sample results:")
+                    for i, result in enumerate(individual_results[:5], 1):  # Limit to 5
+                        trace_name = os.path.basename(result.get("trace", "unknown"))
+                        cost = result.get("cost", 0)
+                        config = result.get("config", {})
+                        feedback_parts.append(
+                            f"  {i}. {trace_name} (d={config.get('duration')}h, "
+                            f"dl={config.get('deadline')}h, o={config.get('overhead'):.2f}h): ${cost:.2f}"
+                        )
+                        
+                        # Add CLI timeline if available
+                        cli_segments = result.get("cli_segments", {})
+                        if cli_segments:
+                            # Add spot availability pattern
+                            spot_pattern = cli_segments.get("spot_availability", "")
+                            if spot_pattern:
+                                feedback_parts.append(f"     Spot availability: {spot_pattern}")
+                            
+                            # Add timeline
+                            if cli_segments.get("timeline_events"):
+                                timeline = cli_segments["timeline_events"][:8]  # Limit timeline
+                                timeline_str = " | ".join(timeline)
+                                if len(cli_segments["timeline_events"]) > 8:
+                                    timeline_str += " | ..."
+                                feedback_parts.append(f"     Timeline: {timeline_str}")
+                            
+                            # Add segment counts
+                            feedback_parts.append(
+                                f"     Segments: S={cli_segments.get('spot_segments', 0)} "
+                                f"OD={cli_segments.get('ondemand_segments', 0)} "
+                                f"restarts={cli_segments.get('restart_count', 0)}"
+                            )
+                
+                feedback_text = "\n".join(feedback_parts)
+            else:
+                error_msg = trajectory.get("error", "Evaluation failed")
+                feedback_text = f"✗ Strategy failed: {error_msg}"
+            
+            sample = {
+                "Score": score,
+                "Runs Successfully": success,
+                "Feedback": feedback_text,
+            }
+            dataset.append(sample)
+            
+        elif isinstance(trajectory, str):
+            dataset.append(
+                {
+                    "Score": score,
+                    "Runs Successfully": False,
+                    "Feedback": trajectory,
+                }
+            )
+
+    if not dataset:
+        dataset.append(
+            {
+                "Score": -10000,
+                "Runs Successfully": False,
+                "Feedback": "No usable trajectory information was produced.",
+            }
+        )
+
+    return dataset
 
 adapter = EvolveAdapter(path=OPENEVOLVE_ROOT, output_extractor=output_extractor, reflect=reflect)
 

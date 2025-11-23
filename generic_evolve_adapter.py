@@ -347,7 +347,7 @@ class EvolveAdapter(GEPAAdapter):
             return {}
 
         dataset = self.reflect(eval_batch)
-        return dataset
+        return {"program": dataset}
 
     def propose_new_texts(
         self,
