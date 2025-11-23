@@ -12,6 +12,8 @@ from gepa import optimize
 from gepa import EvaluationBatch
 from generic_evolve_adapter import EvolveAdapter
 
+from helpers import DEFAULT_TRACE_RATIO
+
 
 TRACE_SAMPLE_IDS: list[int] = [
     0,
@@ -89,10 +91,6 @@ def _list_sample_traces(root: Path, sample_ids: list[int]) -> list[str]:
 
     return sorted(trace_paths)
 
-
-DEFAULT_TRACE_RATIO = 0.30
-
-
 def load_trace_dataset(
     dataset_root: str,
     split_config=None,
@@ -147,9 +145,9 @@ def load_trace_dataset(
     }
 
 DATASET_ROOT = Path(__file__).resolve().parent / "cant_be_late_data" / "exp" / "real"
-DEFAULT_TRACE_RATIO = 0.30
 
-INITIAL_PROGRAM = open(Path(__file__).resolve().parent / "cant_be_late" / "initial_greedy.py", "r").read()
+OPENEVOLVE_ROOT = Path(__file__).resolve().parent / "cant_be_late"
+INITIAL_PROGRAM = open(OPENEVOLVE_ROOT / "initial_greedy.py", "r").read()
 
 def output_extractor(eval_out):
     trace_cost_json = eval_out.artifacts["trace_costs_json"]
@@ -164,9 +162,8 @@ def reflect(batch: EvaluationBatch) -> list:
     # TODO: Fix valset stuff first
     return []
 
-adapter = EvolveAdapter(path=Path(__file__).resolve().parent / "cant_be_late", output_extractor=output_extractor, reflect=reflect)
+adapter = EvolveAdapter(path=OPENEVOLVE_ROOT, output_extractor=output_extractor, reflect=reflect)
 
-DUMMY_BATCH: List[None] = [None]
 RUN_DIR = Path(tempfile.mkdtemp())
 
 
@@ -175,7 +172,7 @@ def load_dataset(
     trace_ratio: float | None = None,
     include_test: bool = True,
 ):
-    """Load train/val/test splits from extracted cant-be-late traces."""
+    """Load train/val/test splits from extracted from traces."""
 
     splits = load_trace_dataset(
         dataset_root=str(DATASET_ROOT),
@@ -260,18 +257,18 @@ def _write_checkpoints(
 if __name__ == "__main__":
     import os
 
-    max_traces_env = os.environ.get("CANT_BE_LATE_MAX_TRACES")
+    max_traces_env = os.environ.get("GEPA_MAX_TRACES")
     max_traces = int(max_traces_env) if max_traces_env else None
     max_metric_calls_env = os.environ.get("GEPA_MAX_METRIC_CALLS")
     max_metric_calls = int(max_metric_calls_env) if max_metric_calls_env else 20
-    trace_ratio_env = os.environ.get("CANT_BE_LATE_TRACE_RATIO")
+    trace_ratio_env = os.environ.get("GEPA_TRACE_RATIO")
     trace_ratio = DEFAULT_TRACE_RATIO
     if trace_ratio_env:
         try:
             trace_ratio = float(trace_ratio_env)
         except ValueError:
             print(
-                f"Invalid CANT_BE_LATE_TRACE_RATIO='{trace_ratio_env}', falling back to {DEFAULT_TRACE_RATIO:.2f}",
+                f"Invalid GEPA_TRACE_RATIO='{trace_ratio_env}', falling back to {DEFAULT_TRACE_RATIO:.2f}",
                 flush=True,
             )
     trace_ratio = min(1.0, max(trace_ratio, DEFAULT_TRACE_RATIO))
@@ -298,7 +295,6 @@ if __name__ == "__main__":
         trainset=train_set,
         valset=val_set,
         adapter=adapter,
-        # Reflection LM is embedded in the adapter – GEPA doesn’t need its own.
         max_metric_calls=int(os.getenv("GEPA_MAX_METRIC_CALLS", "10")),
         run_dir=str(RUN_DIR),
         display_progress_bar=True

@@ -1,0 +1,4 @@
+runs/*
+cant_be_late_data/*
+**/__pycache__
+**/.DS_Store
