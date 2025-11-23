@@ -10,6 +10,7 @@ import os
 # Set up logging
 logger = logging.getLogger(__name__)
 
+
 class OpenEvolveProposalSignature(Signature):
     # Adapt from full_rewrite_prompt_template in openEvolve
     def __init__(self, config):
@@ -20,8 +21,8 @@ class OpenEvolveProposalSignature(Signature):
 
     @classmethod
     def prompt_renderer(cls, input_dict: dict[str, str]) -> str:
-        # TODO(shu): we don't need many datasets with feedback here 
-        # TODO(shu): we just need to provide the original program instructions + execution feedback trace 
+        # TODO(shu): we don't need many datasets with feedback here
+        # TODO(shu): we just need to provide the original program instructions + execution feedback trace
         def format_samples(samples):
             formatted = []
             for i, sample in enumerate(samples, 1):
@@ -33,21 +34,25 @@ class OpenEvolveProposalSignature(Signature):
 
         prompt = cls.prompt_template
         prompt = prompt.replace("<curr_program>", input_dict["current_instruction_doc"])
-        prompt = prompt.replace("<inputs_outputs_feedback>", format_samples(input_dict["dataset_with_feedback"]))
-        
+        prompt = prompt.replace(
+            "<inputs_outputs_feedback>",
+            format_samples(input_dict["dataset_with_feedback"]),
+        )
+
         # Log the full prompt if verbose logging is enabled
         if os.environ.get("GEPA_LOG_PROMPTS", "0") == "1":
-            logger.info("="*80)
+            logger.info("=" * 80)
             logger.info("LLM PROMPT:")
-            logger.info("="*80)
+            logger.info("=" * 80)
             logger.info(prompt)
-            logger.info("="*80)
-        
+            logger.info("=" * 80)
+
         return prompt
 
-
     @classmethod
-    def _parse_full_rewrite(cls, llm_response: str, language: str = "python") -> Optional[str]:
+    def _parse_full_rewrite(
+        cls, llm_response: str, language: str = "python"
+    ) -> Optional[str]:
         """
         Extract a full rewrite from an LLM response
 
@@ -78,12 +83,12 @@ class OpenEvolveProposalSignature(Signature):
     def output_extractor(cls, lm_out: str) -> dict[str, str]:
         # Log the full LLM response if verbose logging is enabled
         if os.environ.get("GEPA_LOG_PROMPTS", "0") == "1":
-            logger.info("="*80)
+            logger.info("=" * 80)
             logger.info("LLM RESPONSE:")
-            logger.info("="*80)
+            logger.info("=" * 80)
             logger.info(lm_out)
-            logger.info("="*80)
-        
+            logger.info("=" * 80)
+
         # TODO(shu): just add some config.language for other languages
         new_program = cls._parse_full_rewrite(lm_out, language="python")
 
